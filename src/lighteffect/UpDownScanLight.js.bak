@@ -1,0 +1,147 @@
+/**
+ * Created by user on 2020/3/16.
+ */
+const Light = require('./Light.js');
+/**
+ *  房屋上下扫描光源,该光源不能添加地表感光对象
+ */
+class UpDownScanLight extends  Light{
+    constructor(){
+        super();
+        //光源类型
+        this.type = 'UpDownScanLight';
+    }
+
+    /**
+     *  更新光源参数数组
+     */
+    updateLightArray(){
+    }
+
+    /**
+     *  获取地面的光源shader
+     */
+    getGlobeSurfaceShader(){
+        // return {
+        //     vertexShaderSource:Cesium.ShaderSource.replaceMain(this.getGlobeSurfaceVS(),this.type),
+        //     fragmentShaderSource:Cesium.ShaderSource.replaceMain(this.getFs(),this.type)
+        // }
+    }
+
+    /**
+     *  获取使用Primitive绘制的纯色面的shader
+     */
+    getPolygonColorPrimitiveShader(){
+        return {
+            vertexShaderSource:Cesium.ShaderSource.replaceMain(this.getPolygonColorPrimitiveVs(),this.type),
+            fragmentShaderSource:Cesium.ShaderSource.replaceMain(this.getFs(),this.type)
+        }
+    }
+
+    // /**
+    //  * 获取点光源点亮地表面顶点shader
+    //  * @returns {string}
+    //  */
+    // getGlobeSurfaceVS(){
+    //     return `
+    //       varying vec3 v_xh_position1;
+    //       void main(){
+    //         #ifdef QUANTIZATION_BITS12
+    //             vec2 xy = czm_decompressTextureCoordinates(compressed0.x);
+    //             vec2 zh = czm_decompressTextureCoordinates(compressed0.y);
+    //             vec3 position = vec3(xy, zh.x);
+    //             float height = zh.y;
+    //             vec2 textureCoordinates = czm_decompressTextureCoordinates(compressed0.z);
+    //
+    //             height = height * (u_minMaxHeight.y - u_minMaxHeight.x) + u_minMaxHeight.x;
+    //             position = (u_scaleAndBias * vec4(position, 1.0)).xyz;
+    //         #else
+    //             // A single float per element
+    //             vec3 position = position3DAndHeight.xyz;
+    //         #endif
+    //             v_xh_position1 = position + u_center3D;
+    //       }
+    //       `;
+    // }
+
+
+    /**
+     *  获取使用Primitive绘制的纯色面的顶点shader
+     */
+    getPolygonColorPrimitiveVs(){
+        return 'varying vec3 v_xh_position3;\n'+
+            ' void main(){\n' +
+            ' v_xh_position3 = position3DHigh + position3DLow;\n'+
+            '}\n';
+    }
+
+    /**
+     *  获取使用Primitive绘制的纯色面的片源shader
+     */
+    getFs1(){
+        let b2t = null;
+        for(let i in this.lightMap){
+            b2t = this.lightMap[i];
+        }
+
+        let center = b2t.position;//基本点,高度为0
+        let mHeight = b2t.maxHeight||10;
+        let sHeight = b2t.scanHeight||50;
+        let sRate = (b2t.scanWidth||2)/sHeight;//控制上下扫描宽度
+        let speed = b2t.speed||600.;//扫描速度
+        let scanColor = b2t.color||new Cesium.Color(0.1,0.3,0.5,1.);//扫描颜色
+        let header = 'varying vec3 v_xh_position3;\n';
+        //ENU矩阵
+        let enu_mat = Cesium.Transforms.eastNorthUpToFixedFrame(center);
+        let ienu_mat = Cesium.Matrix4.inverse(enu_mat,new Cesium.Matrix4);
+
+        let ienu_Shader = 'mat4 ienu_mat2 = mat4('+
+            ienu_mat[0].toFixed(15)+ ','+
+            ienu_mat[1].toFixed(15)+ ','+
+            ienu_mat[2].toFixed(15)+ ','+
+            ienu_mat[3].toFixed(15)+ ','+
+            ienu_mat[4].toFixed(15)+ ','+
+            ienu_mat[5].toFixed(15)+ ','+
+            ienu_mat[6].toFixed(15)+ ','+
+            ienu_mat[7].toFixed(15)+ ','+
+            ienu_mat[8].toFixed(15)+ ','+
+            ienu_mat[9].toFixed(15)+ ','+
+            ienu_mat[10].toFixed(15)+ ','+
+            ienu_mat[11].toFixed(15)+ ','+
+            ienu_mat[12].toFixed(15)+ ','+
+            ienu_mat[13].toFixed(15)+ ','+
+            ienu_mat[14].toFixed(15)+ ','+
+            ienu_mat[15].toFixed(15)+ ');\n';
+
+        let b2TShader = 'void b2tScan(float ch,float mh,float sh,float speed,float sRate,vec3 color){\n' +
+            '   float a11 = fract(czm_frameNumber / speed) * 3.14159265 * 2.;\n' +
+            '   float a12 = ch / mh + sin(a11) * 0.2;\n' +
+            '   gl_FragColor.rgb *=  a12;\n' +
+
+            '   float a13 = fract(czm_frameNumber / speed);\n' +
+            '   float ah = clamp(ch / sh, 0.0, 1.0);\n' +
+            '   a13 = abs(a13 - 0.5) * 2.0;\n' +
+            '   float a_diff = step(sRate, abs(ah - a13));\n' +
+            '   gl_FragColor.rgb += color.rgb * (1.0 - a_diff);\n'+
+            '}\n';
+
+        //圆环扫描Shader
+        let scanShader = 'void main(){\n' ;
+        scanShader += ienu_Shader;
+        scanShader +='float speed = '+speed.toFixed(5)+';\n';//扫描速度参数
+        scanShader +='float rate = '+sRate.toFixed(5)+';\n';//扫描宽度
+        scanShader +='float mHeight = '+mHeight.toFixed(5)+';\n';//扫描半径
+        scanShader +='float sHeight =  '+sHeight.toFixed(5)+';\n';//扫描方向
+        scanShader +='vec3 color =  vec3('+scanColor.red.toFixed(5)+','+scanColor.green.toFixed(5)+','+scanColor.blue.toFixed(5)+');\n';//扫描半径
+        scanShader +=
+            ' vec4 tpoint = ienu_mat2 * vec4(v_xh_position3 ,1.);\n' +
+            ' tpoint /= tpoint.w;\n' +
+            ' float ch = tpoint.z;\n' +
+            ' b2tScan(ch,mHeight,sHeight,speed,rate,color);\n' +
+            '}\n';
+
+        return header + b2TShader + scanShader;
+    }
+}
+
+module.exports = UpDownScanLight;

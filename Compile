@@ -1,0 +1,11 @@
+browserify src/index.js --release --ignore-transform unassertify --standalone Custom > dist/CustomCesiumSDK.js
+browserify src/index.js --debug --ignore-transform unassertify --standalone Custom > dist/CustomCesiumSDK.js
+
+browserify src/index.js --debug --ignore-transform unassertify --standalone Custom > ../cesium/node_modules/cesium/Build/CustomCesiumSDK.js
+
+
+browserify src/index.js --debug --ignore-transform unassertify --standalone Custom > ../../../jsworksapce/land/dist/CustomCesiumSDK.js
+
+
+browserify src/index.js --debug --ignore-transform unassertify --standalone Custom > ../../cesiumSample/Build/CustomCesiumSDK.js
+
